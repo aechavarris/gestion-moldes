@@ -1,0 +1,60 @@
+# Production on the host PC (Windows with Docker Desktop, or Linux):
+#   docker compose -f docker-compose.prod.yml up -d --build
+# Nothing is published on the host or the router: the only way in is Tailscale. The `tailscale`
+# container joins the tailnet and proxies https://<TS_HOSTNAME>.<tailnet>.ts.net to the app with
+# `tailscale serve`. Funnel is NOT enabled, so the site does not exist on the public internet.
+name: gestion-moldes
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: fichas
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      POSTGRES_DB: fichas
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fichas"]
+      interval: 10s
+      retries: 10
+
+  migrate:
+    build: { context: ., target: migrate }
+    environment:
+      DATABASE_URL: postgresql://fichas:${POSTGRES_PASSWORD}@postgres:5432/fichas
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  web:
+    build: { context: ., target: web }
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://fichas:${POSTGRES_PASSWORD}@postgres:5432/fichas
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:3000/login || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  tailscale:
+    image: tailscale/tailscale:stable
+    restart: unless-stopped
+    hostname: ${TS_HOSTNAME:-fichas}
+    environment:
+      TS_AUTHKEY: ${TS_AUTHKEY:?set TS_AUTHKEY}
+      TS_HOSTNAME: ${TS_HOSTNAME:-fichas}
+      TS_STATE_DIR: /var/lib/tailscale
+      TS_USERSPACE: "true"
+      TS_SERVE_CONFIG: /config/serve.json
+    volumes:
+      - tailscale_state:/var/lib/tailscale
+      - ./deploy/tailscale-serve.json:/config/serve.json:ro
+    depends_on: [web]
+
+volumes:
+  pgdata:
+  tailscale_state:

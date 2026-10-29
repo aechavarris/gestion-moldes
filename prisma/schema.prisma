@@ -1,0 +1,109 @@
+generator client {
+  provider     = "prisma-client"
+  output       = "../src/generated/prisma"
+  moduleFormat = "esm"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+/// A person who can sign in. Every user can manage everything (a small team), including other users.
+model User {
+  id            String      @id @default(cuid())
+  /// Lower-cased login name.
+  username      String      @unique
+  displayName   String
+  /// scrypt: "<salt hex>:<hash hex>".
+  passwordHash  String
+  createdAt     DateTime    @default(now())
+  sessions      Session[]
+  createdSheets TechSheet[] @relation("createdBy")
+  updatedSheets TechSheet[] @relation("updatedBy")
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  /// SHA-256 of the cookie token, so a database dump cannot be replayed as a login.
+  tokenHash String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+/// A customer of the workshop (e.g. Dynamobel). Each one owns its technical sheets.
+model Client {
+  id        String      @id @default(cuid())
+  name      String
+  /// Lower-cased name, so "Dynamobel" and "dynamobel" cannot be created twice.
+  nameKey   String      @unique
+  contact   String?
+  phone     String?
+  email     String?
+  notes     String?
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+  sheets    TechSheet[]
+}
+
+/// Injection-moulding settings of one part of a customer. Labels and units of the numeric columns live in
+/// src/lib/sheetFields.ts.
+model TechSheet {
+  id                 String       @id @default(cuid())
+  clientId           String
+  client             Client       @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  /// Part name.
+  title              String
+  material           String?
+  moldTemperature    Float?
+  firstPressure      Float?
+  secondPressure     Float?
+  switchoverPosition Float?
+  chargePosition     Float?
+  chargePressure     Float?
+  chargeSpeed        Float?
+  decompression      Float?
+  coolingTime        Float?
+  nozzleHoldTime     Float?
+  clampForce         Float?
+  notes              String?
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+  createdById        String?
+  createdBy          User?        @relation("createdBy", fields: [createdById], references: [id], onDelete: SetNull)
+  updatedById        String?
+  updatedBy          User?        @relation("updatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  barrelZones        BarrelZone[]
+  photos             Photo[]
+
+  @@index([clientId])
+}
+
+/// One heating zone of the barrel (usillo), in display order.
+model BarrelZone {
+  id          String    @id @default(cuid())
+  sheetId     String
+  sheet       TechSheet @relation(fields: [sheetId], references: [id], onDelete: Cascade)
+  label       String
+  temperature Float
+  position    Int       @default(0)
+
+  @@index([sheetId])
+}
+
+/// Photo of the part, resized on the phone before upload. Stored in the database so the pg_dump backup covers it.
+model Photo {
+  id        String    @id @default(cuid())
+  sheetId   String
+  sheet     TechSheet @relation(fields: [sheetId], references: [id], onDelete: Cascade)
+  data      Bytes
+  thumbnail Bytes
+  width     Int
+  height    Int
+  createdAt DateTime  @default(now())
+
+  @@index([sheetId])
+}

@@ -1,0 +1,58 @@
+@import "tailwindcss";
+
+:root {
+  --bg: #f6f7f9;
+  --card: #ffffff;
+  --text: #15181d;
+  --muted: #5f6672;
+  --border: #dde1e6;
+  --accent: #1f6feb;
+  --danger: #c62828;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0f1216;
+    --card: #181c22;
+    --text: #e8eaed;
+    --muted: #9aa3ad;
+    --border: #2a3038;
+    --accent: #4c8dff;
+    --danger: #ef5350;
+  }
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-card: var(--card);
+  --color-text: var(--text);
+  --color-muted: var(--muted);
+  --color-border: var(--border);
+  --color-accent: var(--accent);
+  --color-danger: var(--danger);
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  -webkit-tap-highlight-color: transparent;
+}
+
+@utility input {
+  @apply w-full rounded-lg border border-border bg-card px-3 py-2.5 text-base outline-none focus:border-accent;
+}
+@utility btn {
+  @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-base font-medium;
+}
+@utility btn-primary {
+  @apply btn bg-accent text-white;
+}
+@utility btn-ghost {
+  @apply btn border border-border bg-card;
+}
+@utility btn-danger {
+  @apply btn border border-danger text-danger;
+}
+@utility card {
+  @apply rounded-xl border border-border bg-card;
+}
