@@ -26,7 +26,67 @@ La web **no existe en internet**. Corre en Docker en el PC anfitrión y la únic
 - Encima, cada persona tiene usuario y contraseña (bloqueo de 15 minutos tras 5 intentos fallidos), por si se pierde un móvil que ya está en la VPN.
 - El móvil usa sus datos móviles (o cualquier wifi); no necesita la red de la empresa.
 
-## Puesta en marcha en el PC anfitrión (Windows)
+## Puesta en marcha en el PC anfitrión (Windows) — automática
+
+`scripts/setup-host.ps1` deja el PC listo de principio a fin y crea una copia del repositorio en la cuenta de GitHub de
+quien aloja la app, con despliegue automático: cada cambio que llega a `main` de esa copia pasa CI en GitHub y se
+construye y arranca en el propio PC con Docker. Se puede ejecutar otra vez sin miedo: salta lo que ya está hecho.
+
+Qué hace, en orden:
+
+1. Comprueba Windows (10 22H2 u 11, 64 bits), la virtualización en la BIOS, el espacio en disco y winget.
+2. Activa WSL 2 y, si hace falta reiniciar, reinicia y **continúa solo** al volver a iniciar sesión.
+3. Instala Git, GitHub CLI, Docker Desktop y, para desarrollar, Node.js LTS, pnpm y VS Code
+   (`-SinHerramientasDesarrollo` para omitirlos).
+4. Da permiso de Docker al usuario (grupo `docker-users`), arranca Docker Desktop y lo deja arrancando con la sesión.
+5. Pregunta si evitar que el PC se suspenda enchufado.
+6. Inicia sesión en GitHub (navegador) y crea el repositorio **privado** en esa cuenta.
+7. Crea `C:\gestion-moldes\app\.env` con una contraseña de base de datos aleatoria y pide la auth key de Tailscale
+   (abre las páginas donde activar MagicDNS + HTTPS y generar la clave). El `.env` solo lo puede leer ese usuario.
+8. Instala un **runner de GitHub Actions** en el PC (`C:\gestion-moldes\runner`, comprobando su SHA-256), que arranca
+   al iniciar sesión, y guarda las variables `DEPLOY_TARGET` y `DEPLOY_DIR` del repositorio.
+9. Sube el código, espera al primer despliegue, programa una copia de seguridad diaria (03:00, se guardan 30) y
+   muestra la dirección de la app. Deja otra copia del repositorio en `%USERPROFILE%\source` para desarrollar.
+
+### 1. Quien tiene el código prepara un paquete
+
+El repositorio original es privado, así que quien tenga acceso genera un fichero con todo el historial y se lo pasa
+(por USB, Drive, etc.):
+
+```powershell
+git clone https://github.com/aechavarris/gestion-moldes.git
+cd gestion-moldes
+git bundle create ..\gestion-moldes.bundle --all
+```
+
+También vale el ZIP de *Code → Download ZIP* (sin historial).
+
+### 2. En el PC anfitrión
+
+Necesita una cuenta de Windows **administradora** y una cuenta de GitHub **activa** (no suspendida). Copia
+`scripts\setup-host.ps1` y el paquete al PC y, en PowerShell:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\setup-host.ps1 -Origen .\gestion-moldes.bundle
+```
+
+Opciones: `-Repositorio` (nombre del repositorio nuevo, por defecto `gestion-moldes`), `-Carpeta` (por defecto
+`C:\gestion-moldes`), `-NombreTailscale` (por defecto `fichas`). Todo queda registrado en `C:\gestion-moldes\setup.log`.
+
+Al terminar quedan tres cosas a mano, que el script recuerda: desactivar el *key expiry* de la máquina en Tailscale,
+meter los móviles en la tailnet (o compartirles la máquina) y crear el primer usuario desde el móvil.
+
+### Cosas a saber
+
+- Docker Desktop y el runner funcionan dentro de la sesión de Windows: tras un reinicio o un corte de luz alguien tiene
+  que iniciar sesión (o configurar el inicio de sesión automático con *Autologon* de Microsoft Sysinternals).
+- Docker Desktop es gratis para uso personal y para empresas de menos de 250 empleados y 10 M$ de facturación.
+- El despliegue se ve en la pestaña *Actions* del repositorio (workflow **Deploy**). Para repetirlo a mano:
+  *Actions → Deploy → Run workflow*.
+- Si cambia `deploy/tailscale-serve.json`, el despliegue recrea el contenedor de Tailscale (solo lee su configuración
+  al arrancar).
+
+## Puesta en marcha manual (sin Actions)
 
 Requisitos: [Docker Desktop](https://www.docker.com/products/docker-desktop/) y [Git](https://git-scm.com/).
 
@@ -53,25 +113,23 @@ Requisitos: [Docker Desktop](https://www.docker.com/products/docker-desktop/) y 
 
 Docker Desktop debe arrancar con Windows (*Settings → General → Start Docker Desktop when you sign in*) y el PC no debe suspenderse si se quiere acceso a cualquier hora. Los contenedores tienen `restart: unless-stopped`.
 
-### Actualizar
+Para actualizar: `git pull` y otra vez `docker compose -f docker-compose.prod.yml up -d --build`. Las migraciones de
+base de datos se aplican solas (servicio `migrate`) antes de arrancar la web.
+
+## Copias de seguridad
+
+Desde la carpeta de despliegue (`C:\gestion-moldes\app`) o desde el repositorio en la instalación manual:
 
 ```powershell
-git pull
-docker compose -f docker-compose.prod.yml up -d --build
+powershell -ExecutionPolicy Bypass -File deploy\backup.ps1
 ```
 
-Las migraciones de base de datos se aplican solas (servicio `migrate`) antes de arrancar la web.
-
-### Copias de seguridad
-
-```powershell
-.\deploy\backup.ps1
-```
-
-Deja un `backups\fichas-<fecha>.sql` (incluye las fotos, que se guardan en la base de datos). Conviene programarlo en el Programador de tareas y copiar la carpeta fuera del PC. Restaurar:
+Deja `backups\gestion-moldes-<fecha>.dump` (incluye las fotos, que se guardan en la base de datos) y conserva las 30
+últimas. La instalación automática ya lo programa a diario; en la manual, prográmalo en el Programador de tareas. Copia
+la carpeta `backups` también fuera del PC. Restaurar (sustituye todos los datos actuales):
 
 ```powershell
-Get-Content backups\fichas-XXXX.sql | docker compose -f docker-compose.prod.yml exec -T postgres psql -U fichas fichas
+powershell -ExecutionPolicy Bypass -File deploy\restore.ps1 -File backups\gestion-moldes-20261101-0300.dump
 ```
 
 ## Desarrollo

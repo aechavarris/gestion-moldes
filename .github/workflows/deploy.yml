@@ -1,0 +1,92 @@
+name: Deploy
+
+# Deploys main to the host PC after CI passes. It runs on a self-hosted Windows runner installed on that PC by
+# scripts/setup-host.ps1, which also sets the repository variables DEPLOY_TARGET=self-hosted and DEPLOY_DIR (the folder
+# holding .env). Repositories without those variables (e.g. a development copy) skip the job instead of queueing forever.
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: >-
+      vars.DEPLOY_TARGET == 'self-hosted' &&
+      (github.event_name == 'workflow_dispatch' ||
+       (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'))
+    runs-on: [self-hosted, gestion-moldes]
+    timeout-minutes: 45
+    defaults:
+      run:
+        # Actions runs these with $ErrorActionPreference = 'stop', where Windows PowerShell turns docker's progress on
+        # stderr into errors; each step resets it and checks exit codes instead.
+        shell: powershell
+    env:
+      DEPLOY_DIR: ${{ vars.DEPLOY_DIR }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      - name: Wait for Docker
+        run: |
+          $ErrorActionPreference = 'Continue'
+          # Docker Desktop starts with the user session, possibly after the runner: give it a few minutes.
+          for ($i = 0; $i -lt 60; $i++) {
+            docker info *> $null
+            if ($LASTEXITCODE -eq 0) { exit 0 }
+            Start-Sleep -Seconds 5
+          }
+          throw "Docker is not running on this PC. Open Docker Desktop and re-run the deploy."
+
+      - name: Copy compose files to the deploy folder
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if (-not $env:DEPLOY_DIR) { throw "Repository variable DEPLOY_DIR is not set (run scripts/setup-host.ps1)." }
+          if (-not (Test-Path "$env:DEPLOY_DIR\.env")) { throw "$env:DEPLOY_DIR\.env is missing (run scripts/setup-host.ps1)." }
+          $serve = "$env:DEPLOY_DIR\deploy\tailscale-serve.json"
+          $before = if (Test-Path $serve) { (Get-FileHash $serve).Hash } else { '' }
+          New-Item -ItemType Directory -Force "$env:DEPLOY_DIR\deploy" | Out-Null
+          Copy-Item docker-compose.prod.yml $env:DEPLOY_DIR -Force
+          Copy-Item deploy\* "$env:DEPLOY_DIR\deploy" -Recurse -Force
+          $changed = [int]($before -ne (Get-FileHash $serve).Hash)
+          # ASCII: Windows PowerShell's UTF-8 adds a BOM that the runner would read as part of the variable name.
+          Add-Content -Path $env:GITHUB_ENV -Value "SERVE_CHANGED=$changed" -Encoding ascii
+
+      - name: Build and start
+        run: |
+          $ErrorActionPreference = 'Continue'
+          $env:BUILD_CONTEXT = $env:GITHUB_WORKSPACE
+          $compose = @('compose', '-f', "$env:DEPLOY_DIR\docker-compose.prod.yml", '--env-file', "$env:DEPLOY_DIR\.env")
+          docker @compose up -d --build --remove-orphans
+          if ($LASTEXITCODE -ne 0) { throw "docker compose up failed" }
+          # Tailscale reads its serve config only at start.
+          if ($env:SERVE_CHANGED -eq '1') {
+            docker @compose up -d --force-recreate tailscale
+            if ($LASTEXITCODE -ne 0) { throw "recreating tailscale failed" }
+          }
+
+      - name: Check the app is healthy
+        run: |
+          $ErrorActionPreference = 'Continue'
+          $compose = @('compose', '-f', "$env:DEPLOY_DIR\docker-compose.prod.yml", '--env-file', "$env:DEPLOY_DIR\.env")
+          for ($i = 0; $i -lt 36; $i++) {
+            $id = docker @compose ps -q web
+            $status = if ($id) { docker inspect -f '{{.State.Health.Status}}' $id } else { 'missing' }
+            if ($status -eq 'healthy') { Write-Host "web is healthy"; exit 0 }
+            Start-Sleep -Seconds 5
+          }
+          docker @compose ps
+          docker @compose logs --tail 80 web migrate
+          throw "web did not become healthy (last status: $status)"
+
+      - name: Remove old images
+        if: always()
+        run: docker image prune -f
