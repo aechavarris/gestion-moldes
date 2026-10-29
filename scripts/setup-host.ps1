@@ -122,7 +122,7 @@ try {
 Write-Step "Comprobando el PC"
 if (-not [Environment]::Is64BitOperatingSystem) { throw "Docker Desktop necesita Windows de 64 bits." }
 $build = [Environment]::OSVersion.Version.Build
-if ($build -lt 19045) { throw "Docker Desktop necesita Windows 10 22H2 (compilación 19045) o Windows 11. Este PC tiene la $build: actualiza Windows." }
+if ($build -lt 19045) { throw "Docker Desktop necesita Windows 10 22H2 (compilación 19045) o Windows 11. Este PC tiene la $($build): actualiza Windows." }
 Write-Ok "Windows compilación $build, 64 bits"
 
 $cs = Get-CimInstance Win32_ComputerSystem
