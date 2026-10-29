@@ -38,3 +38,19 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm build
       - run: docker build --target web -t fichas-web .
+
+  # The host setup and backup scripts only run on the owner's friend's Windows PC: at least make sure they parse.
+  powershell:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Parse PowerShell scripts
+        shell: powershell
+        run: |
+          $failed = $false
+          Get-ChildItem -Recurse -Include *.ps1 -Path scripts, deploy | ForEach-Object {
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile($_.FullName, [ref]$null, [ref]$errors) | Out-Null
+            foreach ($e in $errors) { Write-Host "::error file=$($_.Name),line=$($e.Extent.StartLineNumber)::$($e.Message)"; $failed = $true }
+          }
+          if ($failed) { exit 1 }

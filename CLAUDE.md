@@ -55,6 +55,25 @@ pnpm typecheck; pnpm build      # what CI runs
   `pg_dump` backup covers them; the server only accepts JPEG within size limits. Server actions allow 4 MB bodies
   (`next.config.ts`).
 
+## Deployment
+
+`scripts/setup-host.ps1` (Windows PowerShell 5.1, Spanish messages, UTF-8 with BOM so 5.1 reads the accents) prepares
+the host PC end to end and is idempotent: WSL 2, winget packages, docker-users, Docker Desktop at sign-in, GitHub login,
+a private copy of the repo in the host's own account (from a `git bundle`, ZIP, folder or URL), `<base>\app\.env`, a
+self-hosted runner (label `gestion-moldes`) started by a scheduled task at sign-in (not a service: Docker Desktop lives in
+the user session), repository variables `DEPLOY_TARGET=self-hosted` + `DEPLOY_DIR`, first deploy and a daily backup task.
+`.github/workflows/deploy.yml` runs after CI succeeds on main, only where `DEPLOY_TARGET` is set: it copies the compose
+file and `deploy/` into `DEPLOY_DIR` and builds from the checkout via `BUILD_CONTEXT`, recreating Tailscale when its serve
+config changed. CI parses every `.ps1` on `windows-latest` because nothing else can run them before the host does.
+
+Windows PowerShell 5.1 pitfalls already handled (do not reintroduce): redirecting a native command's stderr
+(`2>$null`, `*>$null`) under `$ErrorActionPreference = 'Stop'` throws even on success (use `Test-Native` /
+`Get-NativeOutput`; Actions' `powershell` steps run with `stop` too, so deploy steps reset it and check `$LASTEXITCODE`);
+inner double quotes in native arguments are dropped (no `--jq` string comparisons: filter with `ConvertFrom-Json`);
+`Add-Content -Encoding ascii` for `$GITHUB_ENV` (UTF-8 adds a BOM); `docker compose cp` destinations must be relative
+(`C:\...` reads as a container named `C`); localized group names (use SIDs with `icacls`); `"$name:"` in a string is a
+scope-qualified variable and breaks parsing (write `"$($name):"`).
+
 ## Conventions
 
 TypeScript strict; validate all input with zod; JSDoc comments that explain *why*; ~130 columns, no Prettier.

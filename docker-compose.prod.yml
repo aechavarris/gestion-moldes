@@ -1,5 +1,7 @@
 # Production on the host PC (Windows with Docker Desktop, or Linux):
 #   docker compose -f docker-compose.prod.yml up -d --build
+# The Deploy workflow copies this file to a fixed folder (DEPLOY_DIR, next to .env) and points BUILD_CONTEXT at the
+# runner's checkout, so the bind-mounted Tailscale config never lives in a workspace that the next checkout wipes.
 # Nothing is published on the host or the router: the only way in is Tailscale. The `tailscale`
 # container joins the tailnet and proxies https://<TS_HOSTNAME>.<tailnet>.ts.net to the app with
 # `tailscale serve`. Funnel is NOT enabled, so the site does not exist on the public internet.
@@ -21,14 +23,14 @@ services:
       retries: 10
 
   migrate:
-    build: { context: ., target: migrate }
+    build: { context: "${BUILD_CONTEXT:-.}", target: migrate }
     environment:
       DATABASE_URL: postgresql://fichas:${POSTGRES_PASSWORD}@postgres:5432/fichas
     depends_on:
       postgres: { condition: service_healthy }
 
   web:
-    build: { context: ., target: web }
+    build: { context: "${BUILD_CONTEXT:-.}", target: web }
     restart: unless-stopped
     environment:
       DATABASE_URL: postgresql://fichas:${POSTGRES_PASSWORD}@postgres:5432/fichas

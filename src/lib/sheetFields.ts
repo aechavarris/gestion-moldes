@@ -19,11 +19,11 @@ export const SHEET_NUMBER_FIELDS = [
   { key: "switchoverPosition", label: "Cambio de cota", unit: "mm", group: "injection" },
   { key: "chargePosition", label: "Carga de material", unit: "mm", group: "charge" },
   { key: "chargePressure", label: "Presión de carga", unit: "bar", group: "charge" },
-  { key: "chargeSpeed", label: "Velocidad de carga", unit: "rpm", group: "charge" },
+  { key: "chargeSpeed", label: "Velocidad de carga", unit: "%", group: "charge" },
   { key: "decompression", label: "Descompresión", unit: "mm", group: "charge" },
   { key: "coolingTime", label: "Tiempo de enfriamiento", unit: "s", group: "times" },
   { key: "nozzleHoldTime", label: "Tiempo de retención de la punta", unit: "s", group: "times" },
-  { key: "clampForce", label: "Fuerza de cierre", unit: "t", group: "clamp" },
+  { key: "clampForce", label: "Fuerza de cierre", unit: "kN", group: "clamp" },
 ] as const satisfies readonly { key: string; label: string; unit: string; group: SheetGroup }[];
 
 export type SheetNumberKey = (typeof SHEET_NUMBER_FIELDS)[number]["key"];
