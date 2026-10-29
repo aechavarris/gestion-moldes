@@ -71,7 +71,8 @@ Windows PowerShell 5.1 pitfalls already handled (do not reintroduce): redirectin
 `Get-NativeOutput`; Actions' `powershell` steps run with `stop` too, so deploy steps reset it and check `$LASTEXITCODE`);
 inner double quotes in native arguments are dropped (no `--jq` string comparisons: filter with `ConvertFrom-Json`);
 `Add-Content -Encoding ascii` for `$GITHUB_ENV` (UTF-8 adds a BOM); `docker compose cp` destinations must be relative
-(`C:\...` reads as a container named `C`); localized group names (use SIDs with `icacls`).
+(`C:\...` reads as a container named `C`); localized group names (use SIDs with `icacls`); `"$name:"` in a string is a
+scope-qualified variable and breaks parsing (write `"$($name):"`).
 
 ## Conventions
 
