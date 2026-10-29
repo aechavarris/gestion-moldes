@@ -14,7 +14,7 @@ App web privada, pensada para el móvil, para gestionar **clientes** y sus **fic
 - Fotos de la pieza desde la cámara o la galería (hasta 20 por ficha). Se reducen en el móvil antes de subirse (~300 KB) y se les quitan los datos de ubicación.
 - Búsqueda global en todas las fichas por pieza, material, notas o cliente.
 - Usuarios: cada persona entra con su usuario y contraseña; la ficha muestra quién la modificó por última vez.
-- Las etiquetas y unidades de los campos están en `src/lib/sheetFields.ts` (cambiar "rpm" por "%" es una línea).
+- Las etiquetas y unidades de los campos están en `src/lib/sheetFields.ts` (cambiar una unidad es una línea).
 - Instalable en el móvil ("Añadir a pantalla de inicio"). Modo claro/oscuro automático.
 
 ## Seguridad: no es pública
