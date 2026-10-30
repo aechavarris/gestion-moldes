@@ -51,7 +51,11 @@ $BackupTask = 'GestionMoldes-Backup'
 $ResumeName = 'GestionMoldesSetup'
 $AppDir = Join-Path $Carpeta 'app'
 $RunnerDir = Join-Path $Carpeta 'runner'
-$DockerExe = Join-Path $env:ProgramFiles 'Docker\Docker\Docker Desktop.exe'
+# Machine-wide install (winget's default) or a per-user one made by hand from Docker's website.
+$DockerExe = @(
+  (Join-Path $env:ProgramFiles 'Docker\Docker\Docker Desktop.exe'),
+  (Join-Path $env:LOCALAPPDATA 'Programs\Docker\Docker\Docker Desktop.exe')
+) | Where-Object { Test-Path $_ } | Select-Object -First 1
 $Me = "$env:USERDOMAIN\$env:USERNAME"
 
 function Write-Step([string]$Text) { Write-Host ""; Write-Host "==> $Text" -ForegroundColor Cyan }
@@ -186,7 +190,13 @@ if (-not $SinHerramientasDesarrollo -and -not (Get-Command pnpm -ErrorAction Sil
 # Docker Desktop only lets members of docker-users use the engine; membership applies at the next sign-in.
 Write-Step "Dando permiso de Docker a $Me"
 $members = Get-NativeOutput { net localgroup docker-users }
-if ($null -eq $members) { throw "No existe el grupo docker-users: la instalación de Docker Desktop no terminó bien." }
+if ($null -eq $members) {
+  # Docker Desktop's installer normally creates it, but an install made earlier by hand (or per user) may not have:
+  # creating it here is what the installer would do.
+  Invoke-Native { net localgroup docker-users /add | Out-Null } "Crear el grupo docker-users"
+  Write-Ok "grupo docker-users creado"
+  $members = @()
+}
 if ($members -match "(^|\\)$([regex]::Escape($env:USERNAME))\s*$") {
   Write-Ok "ya está en docker-users"
 } else {
@@ -215,7 +225,7 @@ Write-Ok "WSL 2 listo"
 # 4. Docker Desktop
 # ---------------------------------------------------------------------------------------------------------------------
 Write-Step "Arrancando Docker Desktop"
-if (-not (Test-Path $DockerExe)) { throw "No se encuentra $DockerExe" }
+if (-not $DockerExe) { throw "No se encuentra Docker Desktop. Desinstálalo desde Configuración > Aplicaciones y vuelve a ejecutar el script para que lo instale." }
 # Start with the session: the app, the runner and the backups all need it, and it only runs while someone is signed in.
 Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' -Name 'Docker Desktop' -Value "`"$DockerExe`""
 if (-not (Test-Native { docker info })) {
