@@ -51,11 +51,6 @@ $BackupTask = 'GestionMoldes-Backup'
 $ResumeName = 'GestionMoldesSetup'
 $AppDir = Join-Path $Carpeta 'app'
 $RunnerDir = Join-Path $Carpeta 'runner'
-# Machine-wide install (winget's default) or a per-user one made by hand from Docker's website.
-$DockerExe = @(
-  (Join-Path $env:ProgramFiles 'Docker\Docker\Docker Desktop.exe'),
-  (Join-Path $env:LOCALAPPDATA 'Programs\Docker\Docker\Docker Desktop.exe')
-) | Where-Object { Test-Path $_ } | Select-Object -First 1
 $Me = "$env:USERDOMAIN\$env:USERNAME"
 
 function Write-Step([string]$Text) { Write-Host ""; Write-Host "==> $Text" -ForegroundColor Cyan }
@@ -87,6 +82,25 @@ function Get-NativeOutput([scriptblock]$Command) {
   $ErrorActionPreference = 'Continue'
   try { $output = & $Command 2>$null; if ($LASTEXITCODE -ne 0) { return $null }; return $output }
   finally { $ErrorActionPreference = $previous }
+}
+
+<#
+  Docker Desktop can live anywhere (winget's default, a per-user install, or a custom folder chosen by hand): ask the
+  running app first, then the uninstall entries, then the default folders. Empty when none is found.
+#>
+function Find-DockerDesktop {
+  $running = Get-Process 'Docker Desktop' -ErrorAction SilentlyContinue | Where-Object { $_.Path } | Select-Object -First 1
+  if ($running) { return $running.Path }
+  $uninstall = 'Software\Microsoft\Windows\CurrentVersion\Uninstall\Docker Desktop'
+  foreach ($key in "HKLM:\$uninstall", "HKCU:\$uninstall") {
+    $location = (Get-ItemProperty -Path $key -ErrorAction SilentlyContinue).InstallLocation
+    if ($location -and (Test-Path (Join-Path $location 'Docker Desktop.exe'))) { return (Join-Path $location 'Docker Desktop.exe') }
+  }
+  $candidates = @(
+    (Join-Path $env:ProgramFiles 'Docker\Docker\Docker Desktop.exe'),
+    (Join-Path $env:LOCALAPPDATA 'Programs\Docker\Docker\Docker Desktop.exe')
+  )
+  return ($candidates | Where-Object { Test-Path $_ } | Select-Object -First 1)
 }
 
 <# winget, Docker and Git add themselves to PATH in the registry; this session only sees it after a reload. #>
@@ -225,11 +239,20 @@ Write-Ok "WSL 2 listo"
 # 4. Docker Desktop
 # ---------------------------------------------------------------------------------------------------------------------
 Write-Step "Arrancando Docker Desktop"
-if (-not $DockerExe) { throw "No se encuentra Docker Desktop. Desinstálalo desde Configuración > Aplicaciones y vuelve a ejecutar el script para que lo instale." }
+$DockerExe = Find-DockerDesktop
 # Start with the session: the app, the runner and the backups all need it, and it only runs while someone is signed in.
-Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' -Name 'Docker Desktop' -Value "`"$DockerExe`""
+if ($DockerExe) {
+  Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' -Name 'Docker Desktop' -Value "`"$DockerExe`""
+  Write-Ok "Docker Desktop arrancará al iniciar sesión ($DockerExe)"
+} else {
+  Write-Note "No se ha encontrado el programa de Docker Desktop: actívalo tú en Docker Desktop > Settings > General >"
+  Write-Note "'Start Docker Desktop when you sign in'."
+}
 if (-not (Test-Native { docker info })) {
-  if (-not (Get-Process 'Docker Desktop' -ErrorAction SilentlyContinue)) { Start-Process $DockerExe }
+  if (-not (Get-Process 'Docker Desktop' -ErrorAction SilentlyContinue)) {
+    if (-not $DockerExe) { throw "Docker no está en marcha y no se encuentra Docker Desktop. Ábrelo a mano y vuelve a ejecutar el script." }
+    Start-Process $DockerExe
+  }
   Write-Note "La primera vez Docker Desktop muestra su acuerdo de licencia: acéptalo en su ventana (puedes saltarte"
   Write-Note "el inicio de sesión y la encuesta). Es gratis para uso personal y empresas pequeñas (<250 empleados)."
   $deadline = (Get-Date).AddMinutes(15)
